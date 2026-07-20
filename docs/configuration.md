@@ -153,12 +153,16 @@ customized).
 | | `toggle_zoom` | `z` | Hide the tree so content fills the frame, or restore the split |
 | | `tree_scroll_left` | `H` | Scroll the tree pane left |
 | | `tree_scroll_right` | `L` | Scroll the tree pane right |
+| | `shrink_graph` | `{` | Shrink the graph section (move the tree/graph divider down) |
+| | `grow_graph` | `}` | Grow the graph section (move the tree/graph divider up) |
 | **Git & filters** | `toggle_ignore` | `i` | Reveal or hide gitignored files |
 | | `toggle_hidden` | `.` | Hide or reveal dot-prefixed (hidden) files and folders |
 | | `toggle_changed_only` | `c` | Restrict the tree to changed files (baseline-aware), or restore the full tree |
 | | `toggle_status_mode` | `d` | Toggle git-status mode: filter to current working-tree status and show working-tree diffs |
 | | `toggle_baseline` | `b` | Switch the diff baseline between base-branch and `HEAD` |
 | | `cycle_diff_render` | `D` | Cycle diff presentation — delta unified → side-by-side → plain `git diff` (side-by-side applies when the configured diff renderer is Delta) |
+| | `toggle_graph` | `g` | Toggle the git graph (source control) section under the file tree |
+| | `toggle_all_branches` | `B` | Switch the graph between current-branch and all-branches history |
 | | `refresh` | `r` | Re-read git state and re-render |
 | **Open & copy** | `open_in_editor` | `e` | Hand the selected file off to an external editor |
 | | `open_with_app` | `O` | Open the selected entry with the OS default application |
@@ -172,6 +176,8 @@ customized).
 | | `open_search` | `/` | Open the in-file search prompt |
 | | `next_match` | `n` | Jump to the next search match (wraps) |
 | | `prev_match` | `N` | Jump to the previous search match (wraps) |
+| | `next_file_section` | `]` | Jump to the next changed file in the unified commit view |
+| | `prev_file_section` | `[` | Jump to the previous changed file in the unified commit view |
 | **Session** | `dismiss_update` | `u` | Dismiss the update-available banner for this session |
 | | `switch_worktree` | `W` | Open the worktree picker to re-root at another git worktree |
 | | `show_help` | `?` | Open the in-app help overlay (What's New and About) |

@@ -67,6 +67,8 @@ fn state(width: u16, focus: Focus) -> ViewState {
         line_select: None,
         content_selection: None,
         help: None,
+        graph: None,
+        graph_pct: 40,
     }
 }
 

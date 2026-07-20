@@ -402,6 +402,48 @@ pub(crate) const REGISTRY: &[Binding] = &[
         category: "Session",
     },
     Binding {
+        intent: Intent::ToggleGraph,
+        name: "toggle_graph",
+        default_keys: &[KeyCode::Char('g')],
+        description: "Toggle the git graph (source control) section under the file tree.",
+        category: "Git & filters",
+    },
+    Binding {
+        intent: Intent::ToggleAllBranches,
+        name: "toggle_all_branches",
+        default_keys: &[KeyCode::Char('B')],
+        description: "Switch the graph between current-branch and all-branches history.",
+        category: "Git & filters",
+    },
+    Binding {
+        intent: Intent::ShrinkGraph,
+        name: "shrink_graph",
+        default_keys: &[KeyCode::Char('{')],
+        description: "Shrink the graph section (move the tree/graph divider down).",
+        category: "View & layout",
+    },
+    Binding {
+        intent: Intent::GrowGraph,
+        name: "grow_graph",
+        default_keys: &[KeyCode::Char('}')],
+        description: "Grow the graph section (move the tree/graph divider up).",
+        category: "View & layout",
+    },
+    Binding {
+        intent: Intent::NextFileSection,
+        name: "next_file_section",
+        default_keys: &[KeyCode::Char(']')],
+        description: "Jump to the next changed file in the unified commit view.",
+        category: "Search & jump",
+    },
+    Binding {
+        intent: Intent::PrevFileSection,
+        name: "prev_file_section",
+        default_keys: &[KeyCode::Char('[')],
+        description: "Jump to the previous changed file in the unified commit view.",
+        category: "Search & jump",
+    },
+    Binding {
         intent: Intent::Close,
         name: "close",
         default_keys: &[KeyCode::Char('q'), KeyCode::Esc],
@@ -737,6 +779,12 @@ mod tests {
         (KeyCode::Char('r'), Intent::Refresh),
         (KeyCode::Char('u'), Intent::DismissUpdate),
         (KeyCode::Char('?'), Intent::ShowHelp),
+        (KeyCode::Char('g'), Intent::ToggleGraph),
+        (KeyCode::Char('B'), Intent::ToggleAllBranches),
+        (KeyCode::Char('{'), Intent::ShrinkGraph),
+        (KeyCode::Char('}'), Intent::GrowGraph),
+        (KeyCode::Char(']'), Intent::NextFileSection),
+        (KeyCode::Char('['), Intent::PrevFileSection),
         (KeyCode::Char('q'), Intent::Close),
         (KeyCode::Esc, Intent::Close),
     ];
@@ -840,7 +888,7 @@ mod tests {
 
     #[test]
     fn unmapped_keys_are_a_noop() {
-        assert_eq!(map_key(k(KeyCode::Char('g'))), None);
+        assert_eq!(map_key(k(KeyCode::Char('p'))), None);
         assert_eq!(map_key(k(KeyCode::Char('x'))), None);
         assert_eq!(map_key(k(KeyCode::F(1))), None);
         assert_eq!(map_key(k(KeyCode::Backspace)), None);
@@ -1443,30 +1491,30 @@ mod tests {
     #[test]
     fn resolve_duplicate_key_clash_rejects_both_ac15() {
         // AC-15: two entries claiming one key both revert to their defaults.
-        let (b, out) = resolve_with(&[("refresh", one("g")), ("open_finder", one("g"))]);
+        let (b, out) = resolve_with(&[("refresh", one("x")), ("open_finder", one("x"))]);
         assert_eq!(out.rejected.len(), 2, "both clashing entries are rejected");
         assert_eq!(dec(&b, KeyCode::Char('r')), Some(Intent::Refresh));
         assert_eq!(dec(&b, KeyCode::Char('f')), Some(Intent::OpenFinder));
         assert_eq!(
-            dec(&b, KeyCode::Char('g')),
+            dec(&b, KeyCode::Char('x')),
             None,
-            "the clashed key 'g' decodes to nothing"
+            "the clashed key 'x' decodes to nothing"
         );
     }
 
     #[test]
     fn resolve_bad_key_token_rejects_whole_entry_ac12() {
         // AC-12: any unparseable token in a spec rejects the whole entry (the intent keeps defaults).
-        let (b, out) = resolve_with(&[("refresh", many(&["g", "Ctrl+x"]))]);
+        let (b, out) = resolve_with(&[("refresh", many(&["x", "Ctrl+x"]))]);
         assert!(
             out.rejected
                 .iter()
                 .any(|r| r.name == "refresh" && matches!(r.reason, RejectReason::BadKeySpec(_))),
         );
         assert_eq!(
-            dec(&b, KeyCode::Char('g')),
+            dec(&b, KeyCode::Char('x')),
             None,
-            "the whole entry is rejected, so its parseable key 'g' is not bound"
+            "the whole entry is rejected, so its parseable key 'x' is not bound"
         );
         assert_eq!(dec(&b, KeyCode::Char('r')), Some(Intent::Refresh));
     }

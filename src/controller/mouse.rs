@@ -258,6 +258,19 @@ impl Controller {
                 }
                 Effects::redraw()
             }
+            MouseRegion::GraphRow(idx) => {
+                // Select the graph row it landed on; a double-click opens the commit (like
+                // Enter). Rows past the loaded end just clamp to the last row.
+                let double = is_double_click(self.last_click, (col, row), now);
+                self.last_click = Some((col, row, now));
+                self.action_notice = None;
+                self.focus = Focus::Graph;
+                self.graph_set_cursor(idx);
+                if double {
+                    return self.open_selected_commit();
+                }
+                Effects::redraw()
+            }
             MouseRegion::Content => {
                 self.last_click = None; // a non-tree click breaks any pending double-click
                 self.focus = Focus::Content;
@@ -287,8 +300,18 @@ impl Controller {
             MouseRegion::TreeRow(_) => {
                 self.focus = Focus::Tree;
                 self.tree.move_cursor(delta.signum());
-                self.dispatch_render();
+                if self.commit.is_some() {
+                    self.scroll_to_selected_commit_file();
+                } else {
+                    self.dispatch_render();
+                }
                 Effects::redraw()
+            }
+            MouseRegion::GraphRow(_) => {
+                // The wheel moves the graph selection (the section scrolls to keep it in
+                // view), matching the tree's wheel behavior.
+                self.focus = Focus::Graph;
+                self.graph_move(delta.signum())
             }
             _ => Effects::noop(),
         }
@@ -481,6 +504,12 @@ impl Controller {
             // still exceed the node count (the empty area below the last node): the click handler
             // treats that as inert, while the wheel still scrolls the column.
             return MouseRegion::TreeRow((row - t.y) as usize + self.geom.tree_scroll as usize);
+        }
+        if let Some(g) = self.geom.graph_inner
+            && g.contains(pos)
+        {
+            // Map the screen row to the graph row drawn there (offset + scroll, like the tree).
+            return MouseRegion::GraphRow((row - g.y) as usize + self.geom.graph_scroll as usize);
         }
         if let Some(c) = self.geom.content_inner
             && c.contains(Position { x: col, y: row })
