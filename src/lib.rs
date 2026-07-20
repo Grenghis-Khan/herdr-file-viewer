@@ -15,6 +15,7 @@ pub mod git;
 pub mod help;
 pub mod herdr;
 pub mod highlight;
+pub mod history;
 pub mod host;
 pub mod index;
 pub mod infile;

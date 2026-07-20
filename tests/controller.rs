@@ -1739,6 +1739,8 @@ fn wide_geometry() -> PaneGeometry {
         help_body_rows: 0,
         help_vbar: None,
         help_tabs: Vec::new(),
+        graph_inner: None,
+        graph_scroll: 0,
     }
 }
 

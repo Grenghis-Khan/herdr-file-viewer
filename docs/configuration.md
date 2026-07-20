@@ -153,11 +153,15 @@ customized).
 | | `toggle_zoom` | `z` | Hide the tree so content fills the frame, or restore the split |
 | | `tree_scroll_left` | `H` | Scroll the tree pane left |
 | | `tree_scroll_right` | `L` | Scroll the tree pane right |
+| | `shrink_graph` | `{` | Shrink the graph section (move the tree/graph divider down) |
+| | `grow_graph` | `}` | Grow the graph section (move the tree/graph divider up) |
 | **Git & filters** | `toggle_ignore` | `i` | Reveal or hide gitignored files |
 | | `toggle_hidden` | `.` | Hide or reveal dot-prefixed (hidden) files and folders |
 | | `toggle_changed_only` | `c` | Restrict the tree to changed files (baseline-aware), or restore the full tree |
 | | `toggle_status_mode` | `d` | Toggle git-status mode: filter to current working-tree status and show working-tree diffs |
 | | `toggle_baseline` | `b` | Switch the diff baseline between base-branch and `HEAD` |
+| | `toggle_graph` | `g` | Toggle the git graph (source control) section under the file tree |
+| | `toggle_all_branches` | `B` | Switch the graph between current-branch and all-branches history |
 | | `refresh` | `r` | Re-read git state and re-render |
 | **Open & copy** | `open_in_editor` | `e` | Hand the selected file off to an external editor |
 | | `open_with_app` | `O` | Open the selected entry with the OS default application |

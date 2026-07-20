@@ -406,6 +406,9 @@ impl GitService for LiveGit {
             self.base_hint.as_deref(),
         )
     }
+    fn log_graph(&self, all: bool, skip: usize, limit: usize) -> Vec<crate::history::CommitRow> {
+        crate::history::log_graph(&self.repo_root, all, skip, limit)
+    }
 }
 
 /// The live Content Renderer: classify + delegate to the external renderers, with guards.

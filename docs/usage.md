@@ -87,6 +87,21 @@ Git is read through the system `git` CLI (read-only subcommands only). Without g
 viewer still opens, but the status markers, filter, baseline, and diffs are degraded — see
 [install](install.md).
 
+## Source control: the commit graph (`g`)
+
+Press `g` to open a **git graph section under the file tree** — a source-control sidebar in the
+Cursor/VS Code spirit, as a strictly read-only *viewer*:
+
+- The section lists the commit history of the current branch (`git log --graph`, so merge and
+  branch edges are drawn by git itself, in color), newest first. `j`/`k` move the selection,
+  and more history loads automatically as you near the bottom. `B` widens the walk to **all
+  branches**; `{` / `}` resize the section; `Tab` cycles focus tree → graph → content.
+- `y` / `Y` with the graph focused copy the selected commit's short / full id (the same
+  clipboard path as the tree's path copy). `g` closes the section entirely.
+
+Like everything else in the viewer this is **read-only**: browsing history never checks out,
+stages, or mutates anything.
+
 ## Navigating within a file
 
 - **Go to a line**: press `:` and type a line number to jump the content pane straight there. In a

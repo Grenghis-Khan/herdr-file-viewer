@@ -23,6 +23,9 @@ is additive and on by default.
 | `c` | Toggle changed-files-only (baseline-aware: follows `b`) |
 | `d` | **Git-status mode** (toggle): restrict the tree to current working-tree status (`M`/`A`/`?`/`D`) and force working-tree diffs in the content pane (file or directory-scoped). Mutually exclusive with `c`; press `d` again to leave |
 | `b` | Toggle the diff baseline (base branch ⇄ `HEAD`) — used by `c` and normal diffs; while `d` is on, content stays working-tree |
+| `g` | Toggle the **git graph** (source control) section under the file tree; see [Source control](#source-control-g). Opening it focuses the graph; a second `g` closes it (leaving commit mode first) |
+| `B` (Shift+`b`) | Switch the graph between **current-branch** and **all-branches** (`--all`) history; inert while the graph is hidden |
+| `{` / `}` | Shrink / grow the graph section (move the tree/graph divider), like `<` / `>` for the columns |
 | `v` | Cycle the content view mode |
 | `e` | Open the selected file in `$EDITOR` (see [Opening in an editor](#opening-in-an-editor)) |
 | `O` (Shift+`o`) | **Open with default app**: hand the selected file or directory to the OS default application (e.g. an image opens in the system viewer). Read-only hand-off; non-blocking (the viewer keeps running) |
@@ -35,7 +38,7 @@ is additive and on by default.
 | `Y` | Copy the selected file's **absolute** path to the clipboard |
 | `a` | **Add annotation**: open the annotation editor for the selected file (`←`/`→` or `Home`/`End` move the text cursor, `Enter` saves, `Esc` cancels). Annotations live only for this viewer session and never modify the file |
 | `A` (Shift+`a`) | **Show annotations**: open the session overview; fixed keys `j`/`k` or `↑`/`↓` move, `Enter`/`e` edits, `d` deletes one, `D` (Shift+`d`) clears all immediately, `y` copies all, and `Esc`/`q` closes |
-| `Tab` | Move focus between the tree and content columns |
+| `Tab` | Move focus between the regions: tree ⇄ content, or tree → graph → content when the graph section is open |
 | `<` / `>` | Narrow / widen the tree column (move the divider) |
 | `w` | Toggle line wrapping for the content pane. For rendered markdown this switches between the fit-to-pane view (wide tables sized to fit, over-long cells shown as `…`) and a wide view that renders tables at full width and scrolls horizontally (`←`/`→`) so you can read every cell |
 | `z` | Zoom: hide the tree so the content pane fills the frame; press again (or `q`/`Esc`) to restore the two-column layout |
@@ -66,8 +69,23 @@ content scroll.)
 
 Character keys act only when no control chord is held (so terminal chords like `Ctrl+C` are
 never intercepted); `Shift` is permitted, for keys such as `<` and `>` (and `a`/`A`, `y`/`Y`,
-`W`, `N`, `O`, `R`, `Z`, `?`, `H`/`L`, `J`/`K` in line-select mode, and `d`/`D` in the annotation
-overview).
+`W`, `N`, `O`, `R`, `Z`, `?`, `B`, `{`/`}`, `H`/`L`, `J`/`K` in line-select mode, and `d`/`D` in
+the annotation overview).
+
+### Source control (`g`)
+
+`g` opens a **git graph section under the file tree**: the commit history of the current branch
+(`git log --graph`), newest first, with git's own graph edges and colors. `Tab` cycles focus
+tree → graph → content; with the graph focused:
+
+- `j`/`k` (or `↑`/`↓`) move the commit selection; scrolling near the bottom **loads more
+  history automatically**. The wheel and clicks work too.
+- `y` / `Y` copy the selected commit's **short / full id** (the same clipboard path as the
+  tree's path copy).
+- `B` widens the walk to **all branches**; `{` / `}` resize the section; `g` closes it.
+
+Everything here is **read-only**: the graph only ever runs read-only git queries — no checkout,
+no staging, no history mutation.
 
 ### Copy a path (`y` / `Y`)
 

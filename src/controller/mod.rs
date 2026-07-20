@@ -24,6 +24,7 @@
 mod annotation;
 mod finder;
 mod git_apply;
+mod graph;
 mod help;
 mod infile;
 mod lineselect;
@@ -108,6 +109,14 @@ pub trait GitService: Send + Sync {
     /// `baseline`. Empty `rel_dir` means the whole tree root. Used by git-status mode (`d`)
     /// when a directory is selected.
     fn diff_directory(&self, rel_dir: &Path, baseline: Baseline) -> String;
+    /// One page of the commit graph (the source-control section, `g`): `git log --graph` rows
+    /// in display order, `skip` commits in, at most `limit` rows' worth of commits; `all`
+    /// widens from HEAD to every ref. Defaulted to empty so existing stubs (and non-graph
+    /// tests) need no implementation — the graph section then just shows nothing (AC-26).
+    fn log_graph(&self, all: bool, skip: usize, limit: usize) -> Vec<crate::history::CommitRow> {
+        let _ = (all, skip, limit);
+        Vec::new()
+    }
 }
 
 /// The rendered content pane for one file: ingested text plus any non-fatal notices
@@ -462,6 +471,12 @@ pub struct Controller {
     /// Working-tree status (`git status`), cached separately from the baseline-dependent
     /// [`Self::changed`] set so status mode can filter independently of `b`.
     git_status: BTreeMap<PathBuf, Status>,
+    /// The git graph (source-control) section's state, or `None` while hidden (the `g` toggle).
+    /// Root-bound (its rows belong to this repo): reset on a re-root, like the tree.
+    graph: Option<graph::GraphState>,
+    /// The graph section's share of the sidebar height, in percent (the `{`/`}` resize keys).
+    /// A session preference like `split_pct`; carried across a re-root.
+    graph_pct: u16,
     /// The tree's horizontal scroll offset (columns), for reading long / deeply-nested rows. Like
     /// the cursor it is navigation state: reset on a re-root (AC-13), not carried.
     tree_hscroll: u16,
@@ -744,6 +759,8 @@ impl Controller {
             changed_only: false,
             status_mode: false,
             git_status: BTreeMap::new(),
+            graph: None,
+            graph_pct: crate::presenter::GRAPH_PCT_DEFAULT,
             focus: Focus::Tree,
             width: 0,
             content_scroll: 0,
@@ -954,6 +971,9 @@ impl Controller {
 
         // Reset navigation/view state (AC-13). The picker is closed on a switch (AC-13 "picker
         // is closed"); `herdr`/`our_workspace_id` are session-level and deliberately left intact.
+        // The graph rows belong to the OLD repo's history — reset the section (`graph_pct`, a
+        // layout preference, is carried like `split_pct`).
+        self.graph = None;
         self.focus = Focus::Tree;
         self.zoomed = false;
         // Re-rooting returns to the two-column split, so release the viewer's own host pane zoom
@@ -1466,6 +1486,8 @@ impl Controller {
                     }
                 }),
             help: self.help_view(),
+            graph: self.graph_view(),
+            graph_pct: self.graph_pct,
         }
     }
 
@@ -1600,8 +1622,16 @@ impl Controller {
             Intent::OpenInEditor => self.open_in_editor(),
             Intent::OpenWithApp => self.open_with_app(),
             Intent::RevealInFileManager => self.reveal_in_file_manager(),
-            Intent::CopyRepoPath => self.copy_path(PathKind::Repo),
-            Intent::CopyAbsPath => self.copy_path(PathKind::Absolute),
+            // Focus-gated (like `L`): with the graph focused, `y`/`Y` copy the selected
+            // commit's short/full id instead of the tree selection's path.
+            Intent::CopyRepoPath => match self.focus {
+                Focus::Graph => self.copy_commit_sha(false),
+                _ => self.copy_path(PathKind::Repo),
+            },
+            Intent::CopyAbsPath => match self.focus {
+                Focus::Graph => self.copy_commit_sha(true),
+                _ => self.copy_path(PathKind::Absolute),
+            },
             Intent::AddAnnotation => self.add_annotation(),
             Intent::ShowAnnotations => self.show_annotations(),
             Intent::ToggleFocus => self.toggle_focus(),
@@ -1630,6 +1660,7 @@ impl Controller {
             // this comment is the up-to-date behavior note instead.
             Intent::TreeScrollRight => match self.focus {
                 Focus::Tree => self.scroll_tree_h_focus(HSCROLL_STEP as i32), // AC-2: unchanged
+                Focus::Graph => Effects::noop(), // the graph has no h-scroll or line-select
                 Focus::Content => {
                     if self.content.lines.is_empty() {
                         Effects::noop() // AC-3: no rendered content → inert
@@ -1640,6 +1671,10 @@ impl Controller {
                 }
             },
             Intent::ShowHelp => self.open_help(),
+            Intent::ToggleGraph => self.toggle_graph(),
+            Intent::ToggleAllBranches => self.toggle_all_branches(),
+            Intent::ShrinkGraph => self.shrink_graph(),
+            Intent::GrowGraph => self.grow_graph(),
             Intent::Close => self.close_or_unzoom(),
         }
     }
@@ -1654,6 +1689,7 @@ impl Controller {
                 self.scroll_content(delta);
                 Effects::redraw()
             }
+            Focus::Graph => self.graph_move(delta),
             Focus::Tree => {
                 self.tree.move_cursor(delta);
                 self.dispatch_render(); // new selection → re-render (and reset the scroll)
@@ -1797,6 +1833,9 @@ impl Controller {
         if self.focus == Focus::Content {
             return self.scroll_content_h(HSCROLL_STEP as i32);
         }
+        if self.focus == Focus::Graph {
+            return Effects::noop(); // the graph has no expand/collapse
+        }
         if let Some(node) = self.tree.selected()
             && node.kind == NodeKind::Dir
         {
@@ -1811,6 +1850,9 @@ impl Controller {
     fn collapse(&mut self) -> Effects {
         if self.focus == Focus::Content {
             return self.scroll_content_h(-(HSCROLL_STEP as i32));
+        }
+        if self.focus == Focus::Graph {
+            return Effects::noop(); // the graph has no expand/collapse
         }
         if let Some(node) = self.tree.selected()
             && node.kind == NodeKind::Dir
@@ -1827,6 +1869,11 @@ impl Controller {
     /// ([`Intent::OpenInEditor`]). The content was already rendered when the file was selected,
     /// so this only flips the layout/focus — no re-render is dispatched.
     fn activate(&mut self) -> Effects {
+        // Focus-gated: `Enter` while the graph is focused is inert here — opening a commit
+        // arrives with the unified commit view (a later change). Browsing stays on the graph.
+        if self.focus == Focus::Graph {
+            return Effects::noop();
+        }
         let Some(node) = self.tree.selected() else {
             return Effects::noop();
         };
@@ -2140,9 +2187,13 @@ impl Controller {
         if self.zoomed {
             return Effects::noop();
         }
-        self.focus = match self.focus {
-            Focus::Tree => Focus::Content,
-            Focus::Content => Focus::Tree,
+        // Tab cycles through every VISIBLE region: tree → graph → content when the graph
+        // section is open, the classic tree ⇄ content toggle when it is not.
+        self.focus = match (self.focus, self.graph.is_some()) {
+            (Focus::Tree, true) => Focus::Graph,
+            (Focus::Graph, _) => Focus::Content,
+            (Focus::Tree, false) => Focus::Content,
+            (Focus::Content, _) => Focus::Tree,
         };
         Effects::redraw()
     }
@@ -2805,6 +2856,8 @@ enum PathKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MouseRegion {
     TreeRow(usize),
+    /// A row of the git graph section (index into the loaded rows, scroll included).
+    GraphRow(usize),
     Content,
     Divider,
     /// The content pane's vertical scrollbar — drag up/down to scroll.

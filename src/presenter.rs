@@ -19,10 +19,12 @@ use ratatui::widgets::{
     Block, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
 };
 
-/// Which column currently has keyboard focus.
+/// Which region currently has keyboard focus. `Graph` exists only while the source-control
+/// section is visible; the controller never leaves focus there after hiding it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Tree,
+    Graph,
     Content,
 }
 
@@ -153,6 +155,27 @@ pub struct ViewState {
     /// When `Some`, the in-app help overlay is drawn on top of everything else (AC-1, AC-5).
     /// `None` ⇒ no overlay. Drawn last in [`draw`] so it sits above the picker and finder.
     pub help: Option<HelpView>,
+    /// When `Some`, the git graph (source-control) section is drawn under the file tree in the
+    /// sidebar column. `None` ⇒ the sidebar is the tree alone (the pre-graph layout, unchanged).
+    pub graph: Option<GraphView>,
+    /// The graph section's share of the sidebar height, as a percentage (the tree takes the
+    /// rest). Only meaningful while [`graph`](Self::graph) is `Some`.
+    pub graph_pct: u16,
+}
+
+/// The git graph section's draw model (an owned snapshot of the controller's graph state).
+/// The rows are already ingested through the escape-neutralizing `ansi-to-tui` path (AC-27).
+pub struct GraphView {
+    /// The graph rows (edges + decorated subjects), in display order, ready to draw.
+    pub lines: Vec<Line<'static>>,
+    /// Index into `lines` of the selected row.
+    pub cursor: usize,
+    /// The graph's vertical scroll offset from the LAST drawn frame, carried back via
+    /// [`PaneGeometry::graph_scroll`] so the viewport scrolls minimally (like the tree, #45).
+    pub scroll: u16,
+    /// The section's top-border title (e.g. `History` / `History · all`). First-party static
+    /// text assembled by the controller.
+    pub title: String,
 }
 
 /// The worktree picker's draw model (an owned snapshot of the controller's picker state, so
@@ -969,6 +992,81 @@ fn draw_tree(frame: &mut Frame, area: Rect, state: &ViewState) {
     }
 }
 
+/// Split the sidebar column into the tree (top) and the git graph section (bottom), when the
+/// graph is visible. `(area, None)` when it is hidden — the pre-graph layout, unchanged. The
+/// graph's share is `graph_pct`, clamped so neither section can collapse below 3 rows'
+/// worth of percentage on any pane. Shared by [`draw`] and [`geometry`] so the drawn layout
+/// and the hit-test geometry can never disagree (the same discipline as [`columns`]).
+fn sidebar_split(area: Rect, state: &ViewState) -> (Rect, Option<Rect>) {
+    if state.graph.is_none() {
+        return (area, None);
+    }
+    let pct = state.graph_pct.clamp(GRAPH_PCT_MIN, GRAPH_PCT_MAX);
+    let parts = Layout::vertical([
+        Constraint::Percentage(100 - pct),
+        Constraint::Percentage(pct),
+    ])
+    .split(area);
+    (parts[0], Some(parts[1]))
+}
+
+/// The graph section's share of the sidebar height: its default and the bounds the `{`/`}`
+/// resize keys clamp to, so neither the tree nor the graph can be squeezed to nothing.
+pub const GRAPH_PCT_DEFAULT: u16 = 40;
+pub const GRAPH_PCT_MIN: u16 = 20;
+pub const GRAPH_PCT_MAX: u16 = 80;
+
+/// Draw the git graph (source-control) section: a bordered block under the tree, listing
+/// `git log --graph` rows with the selected row emphasized. The rows arrived through the
+/// escape-neutralizing ingest (AC-27); the selection emphasis is style-only (REVERSED), so the
+/// graph's own ANSI colors survive underneath it.
+fn draw_graph(frame: &mut Frame, area: Rect, state: &ViewState, graph: &GraphView) {
+    let block = Block::bordered()
+        .title(truncate_title(&sanitize_control(&graph.title), area.width))
+        .border_style(border_style(state.focus == Focus::Graph));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.height == 0 || inner.width == 0 {
+        return;
+    }
+    let rows: Vec<Line> = graph
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if i == graph.cursor {
+                line.clone()
+                    .patch_style(Style::new().add_modifier(Modifier::REVERSED))
+            } else {
+                line.clone()
+            }
+        })
+        .collect();
+    let max_width = rows.iter().map(Line::width).max().unwrap_or(0);
+    let (text, vbar, _hbar) = tree_bars(inner, rows.len(), 0);
+    let offset = sticky_scroll_offset(
+        graph.cursor,
+        rows.len(),
+        text.height as usize,
+        graph.scroll as usize,
+    );
+    let _ = max_width; // rows wider than the pane are clipped; the graph has no h-scroll
+    frame.render_widget(
+        Paragraph::new(rows).scroll((offset.min(u16::MAX as usize) as u16, 0)),
+        text,
+    );
+    if let Some(track) = vbar {
+        // Like the tree, the thumb tracks the CURSOR: the viewport follows the selection.
+        draw_vscrollbar(
+            frame,
+            track,
+            graph.lines.len(),
+            graph.cursor,
+            text.height as usize,
+        );
+    }
+}
+
 /// The content pane's outer block (border + optional left gap), WITHOUT its titles/styles.
 /// Shared by [`draw_content`] and [`geometry`] so the drawn text rect and the hit-test geometry
 /// inset the border identically — a mismatch would map a content-pane click one column off under
@@ -1187,7 +1285,8 @@ fn columns(area: Rect, state: &ViewState) -> (Option<Rect>, Option<Rect>, Option
     }
     if area.width < NARROW_SPLIT {
         return match state.focus {
-            Focus::Tree => (Some(area), None, None),
+            // The graph lives inside the sidebar column, so graph focus shows the sidebar.
+            Focus::Tree | Focus::Graph => (Some(area), None, None),
             Focus::Content => (None, Some(area), None),
         };
     }
@@ -1300,6 +1399,11 @@ pub struct PaneGeometry {
     /// widths + `HELP_TAB_SEP`), so a click maps to the tab actually drawn. Empty when the overlay is
     /// closed. The controller hit-tests a left-click against these to switch sections (AC-10).
     pub help_tabs: Vec<(usize, Rect)>,
+    /// The graph section's text interior (rows drawn at `graph_inner.y + r` are index
+    /// `r + graph_scroll`), `None` while the section is hidden. Mirrors `tree_inner`.
+    pub graph_inner: Option<Rect>,
+    /// The graph's vertical scroll offset (first visible row index) on the last drawn frame.
+    pub graph_scroll: u16,
 }
 
 /// Compute the [`PaneGeometry`] for hit-testing the current frame — the same layout [`draw`]
@@ -1307,8 +1411,31 @@ pub struct PaneGeometry {
 /// block is its area inset by one cell on each side (the title does not change it).
 pub fn geometry(area: Rect, state: &ViewState) -> PaneGeometry {
     let (body, _footer, _prompt) = body_footer_prompt(area, state);
-    let (tree, content, divider_x) = columns(body, state);
+    let (sidebar, content, divider_x) = columns(body, state);
     let inner = |r: Rect| Block::bordered().inner(r);
+
+    // The sidebar column splits into the tree and the (optional) graph section — the SAME
+    // split `draw` renders, so clicks map to what is actually drawn.
+    let (tree, graph_area) = match sidebar {
+        Some(s) => {
+            let (t, g) = sidebar_split(s, state);
+            (Some(t), g)
+        }
+        None => (None, None),
+    };
+    let (graph_inner, graph_scroll) = match (graph_area.map(inner), &state.graph) {
+        (Some(gi), Some(graph)) => {
+            let (text, _v, _h) = tree_bars(gi, graph.lines.len(), 0);
+            let offset = sticky_scroll_offset(
+                graph.cursor,
+                graph.lines.len(),
+                text.height as usize,
+                graph.scroll as usize,
+            );
+            (Some(text), offset.min(u16::MAX as usize) as u16)
+        }
+        _ => (None, 0),
+    };
 
     // Tree: the SAME layout `draw_tree` computes (text rect + in-pane bar tracks), so a click maps
     // to the row actually drawn and a press lands on the bar actually shown. The scroll offset is
@@ -1412,6 +1539,8 @@ pub fn geometry(area: Rect, state: &ViewState) -> PaneGeometry {
         help_body_rows,
         help_vbar,
         help_tabs,
+        graph_inner,
+        graph_scroll,
     }
 }
 
@@ -1433,7 +1562,11 @@ pub fn draw(frame: &mut Frame, state: &ViewState) -> (u16, u16) {
     }
     let (tree, content, _divider) = columns(body, state);
     if let Some(area) = tree {
-        draw_tree(frame, area, state);
+        let (tree_area, graph_area) = sidebar_split(area, state);
+        draw_tree(frame, tree_area, state);
+        if let (Some(garea), Some(graph)) = (graph_area, &state.graph) {
+            draw_graph(frame, garea, state, graph);
+        }
     }
     let dims = match content {
         Some(area) => draw_content(frame, area, state),

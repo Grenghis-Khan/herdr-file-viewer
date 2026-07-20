@@ -131,6 +131,18 @@ pub enum Intent {
     /// [`Intent::TreeScrollLeft`] it only moves the in-pane scroll; no mutation. Bound to `L`
     /// (Shift+`l`) only — no event hook (AC-N6). Inert unless the tree is focused.
     TreeScrollRight,
+    /// Toggle the git graph section under the file tree (the source-control sidebar). Opening
+    /// it loads the first page of `git log --graph` (read-only) and focuses the section;
+    /// closing it (a second press) leaves commit mode if active and returns focus to the tree.
+    /// Read-only — the graph only ever *queries* history, never mutates it (AC-N2/N3).
+    ToggleGraph,
+    /// Widen the graph's history scope: current branch (HEAD) ⇄ all refs (`git log --all`).
+    /// Read-only; inert while the graph section is hidden.
+    ToggleAllBranches,
+    /// Shrink the graph section (move the tree/graph divider down). Pure layout state.
+    ShrinkGraph,
+    /// Grow the graph section (move the tree/graph divider up). Pure layout state.
+    GrowGraph,
     /// Close the viewer and return control to the prior pane (AC-20).
     Close,
 }
@@ -138,7 +150,7 @@ pub enum Intent {
 impl Intent {
     /// Every intent variant — lets the dispatcher and tests enumerate the closed set so
     /// keyboard-completeness (AC-18) and the no-file/git-mutation invariant (AC-N3) stay checkable.
-    pub const ALL: [Intent; 36] = [
+    pub const ALL: [Intent; 40] = [
         Intent::NavUp,
         Intent::NavDown,
         Intent::Expand,
@@ -174,6 +186,10 @@ impl Intent {
         Intent::TreeScrollLeft,
         Intent::TreeScrollRight,
         Intent::ShowHelp,
+        Intent::ToggleGraph,
+        Intent::ToggleAllBranches,
+        Intent::ShrinkGraph,
+        Intent::GrowGraph,
         Intent::Close,
     ];
 }
@@ -225,6 +241,10 @@ mod tests {
                 | Intent::TreeScrollLeft
                 | Intent::TreeScrollRight
                 | Intent::ShowHelp
+                | Intent::ToggleGraph
+                | Intent::ToggleAllBranches
+                | Intent::ShrinkGraph
+                | Intent::GrowGraph
                 | Intent::Close => (false, false),
             };
             assert!(
@@ -298,12 +318,27 @@ mod tests {
     }
 
     #[test]
-    fn all_length_is_36() {
+    fn all_length_is_40() {
         assert_eq!(
             Intent::ALL.len(),
-            36,
-            "Intent::ALL must have exactly 36 variants after adding ToggleStatusMode"
+            40,
+            "Intent::ALL must have exactly 40 variants after adding the source-control intents"
         );
+    }
+
+    #[test]
+    fn source_control_intents_are_in_all() {
+        for intent in [
+            Intent::ToggleGraph,
+            Intent::ToggleAllBranches,
+            Intent::ShrinkGraph,
+            Intent::GrowGraph,
+        ] {
+            assert!(
+                Intent::ALL.contains(&intent),
+                "Intent::ALL must contain {intent:?}"
+            );
+        }
     }
 
     #[test]
