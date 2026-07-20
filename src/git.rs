@@ -130,8 +130,10 @@ fn parse_porcelain_status(out: &[u8]) -> BTreeMap<PathBuf, Status> {
 ///
 /// Extracted from [`changed_set`] so the parser's defensive branches (rename/copy
 /// `code, old, new` triples, truncated records, unknown codes, empty input) are
-/// unit-testable without a live git repo. Pure: bytes in, map out.
-fn parse_name_status(out: &[u8]) -> BTreeMap<PathBuf, Status> {
+/// unit-testable without a live git repo. Pure: bytes in, map out. `pub(crate)` because the
+/// History Service ([`crate::history`]) parses its commit file lists (`show --name-status -z`)
+/// through this same parser, so the two consumers cannot drift.
+pub(crate) fn parse_name_status(out: &[u8]) -> BTreeMap<PathBuf, Status> {
     let mut map = BTreeMap::new();
     let mut fields = out.split(|&b| b == 0).filter(|f| !f.is_empty());
     while let Some(code_f) = fields.next() {
@@ -394,7 +396,7 @@ pub(crate) fn git_command(repo_root: &Path, args: &[&str]) -> Command {
 /// writing to the now-unread pipe). The render layer still truncates the visible diff and
 /// shows its notice; this bound is comfortably above that display cap, so it only limits the
 /// transient buffer (and git's work), never what the user sees.
-fn capture_stdout(mut cmd: Command) -> String {
+pub(crate) fn capture_stdout(mut cmd: Command) -> String {
     let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn() {
         Ok(c) => c,
         Err(_) => return String::new(),

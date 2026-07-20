@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- Source-control mode (`g`): a read-only git commit **graph** section under the file tree (`git log --graph`, auto-loading more history on scroll). `B` toggles all-branches, `{`/`}` resize the section, `Tab` cycles tree → graph → content, and `y`/`Y` copy the selected commit's short/full id. → [usage](docs/usage.md#source-control-the-commit-graph-g) · [keys](docs/keys.md#source-control-g)
+- Source-control mode (`g`): a git commit graph section under the file tree (`git log --graph`, auto-loading more history on scroll; `B` toggles all-branches). `Enter` on a commit opens the **unified commit view** — header + every changed file's diff as one delta-rendered document — and scopes the tree to that commit's files; `]`/`[` jump between file sections, `y`/`Y` copy the commit id, `Esc` returns to the working tree. Read-only throughout. → [usage](docs/usage.md#source-control-the-commit-graph-g) · [keys](docs/keys.md#source-control-g)
 - Git-status mode (`d`): filter the tree to current working-tree status and force working-tree diffs (file or directory-scoped); sticky until `d` again, mutually exclusive with baseline-aware `c`. → [usage](docs/usage.md#git-awareness) · [keys](docs/keys.md)
 
 ## [1.13.0] - 2026-07-16

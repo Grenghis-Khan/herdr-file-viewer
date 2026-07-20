@@ -416,6 +416,20 @@ pub(crate) const REGISTRY: &[Binding] = &[
         category: "View & layout",
     },
     Binding {
+        intent: Intent::NextFileSection,
+        name: "next_file_section",
+        default_keys: &[KeyCode::Char(']')],
+        description: "Jump to the next changed file in the unified commit view.",
+        category: "Search & jump",
+    },
+    Binding {
+        intent: Intent::PrevFileSection,
+        name: "prev_file_section",
+        default_keys: &[KeyCode::Char('[')],
+        description: "Jump to the previous changed file in the unified commit view.",
+        category: "Search & jump",
+    },
+    Binding {
         intent: Intent::Close,
         name: "close",
         default_keys: &[KeyCode::Char('q'), KeyCode::Esc],
@@ -754,6 +768,8 @@ mod tests {
         (KeyCode::Char('B'), Intent::ToggleAllBranches),
         (KeyCode::Char('{'), Intent::ShrinkGraph),
         (KeyCode::Char('}'), Intent::GrowGraph),
+        (KeyCode::Char(']'), Intent::NextFileSection),
+        (KeyCode::Char('['), Intent::PrevFileSection),
         (KeyCode::Char('q'), Intent::Close),
         (KeyCode::Esc, Intent::Close),
     ];

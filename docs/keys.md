@@ -26,6 +26,7 @@ is additive and on by default.
 | `g` | Toggle the **git graph** (source control) section under the file tree; see [Source control](#source-control-g). Opening it focuses the graph; a second `g` closes it (leaving commit mode first) |
 | `B` (Shift+`b`) | Switch the graph between **current-branch** and **all-branches** (`--all`) history; inert while the graph is hidden |
 | `{` / `}` | Shrink / grow the graph section (move the tree/graph divider), like `<` / `>` for the columns |
+| `]` / `[` | In commit mode, jump to the **next / previous changed file** of the commit: selects it in the tree and scrolls the unified commit view to its diff section |
 | `v` | Cycle the content view mode |
 | `e` | Open the selected file in `$EDITOR` (see [Opening in an editor](#opening-in-an-editor)) |
 | `O` (Shift+`o`) | **Open with default app**: hand the selected file or directory to the OS default application (e.g. an image opens in the system viewer). Read-only hand-off; non-blocking (the viewer keeps running) |
@@ -80,12 +81,19 @@ tree → graph → content; with the graph focused:
 
 - `j`/`k` (or `↑`/`↓`) move the commit selection; scrolling near the bottom **loads more
   history automatically**. The wheel and clicks work too.
+- `Enter` (or a double-click) opens the selected commit in **commit mode**: the content pane
+  shows the **unified commit view** — the commit header and every changed file's diff as one
+  scrollable document (rendered by delta, like any diff) — and the file tree switches to **only
+  that commit's files**, with `A`/`M`/`D` markers. Selecting a file in that tree (or pressing
+  `]` / `[`) scrolls the unified view to that file's diff section.
 - `y` / `Y` copy the selected commit's **short / full id** (the same clipboard path as the
   tree's path copy).
-- `B` widens the walk to **all branches**; `{` / `}` resize the section; `g` closes it.
+- `B` widens the walk to **all branches**; `Esc`/`q` leave commit mode first (restoring the
+  working-tree view and cursor), then quit as usual; `g` closes the section.
 
-Everything here is **read-only**: the graph only ever runs read-only git queries — no checkout,
-no staging, no history mutation.
+Everything here is **read-only**: the graph and commit views only ever run read-only git
+queries — no checkout, no staging, no history mutation. Merge commits are shown against their
+**first parent** (as on a GitHub commit page); renames appear with an `M` marker.
 
 ### Copy a path (`y` / `Y`)
 

@@ -143,6 +143,12 @@ pub enum Intent {
     ShrinkGraph,
     /// Grow the graph section (move the tree/graph divider up). Pure layout state.
     GrowGraph,
+    /// In commit mode, select the next changed file of the commit and scroll the unified
+    /// commit view to its diff section. Read-only navigation; inert outside commit mode.
+    NextFileSection,
+    /// In commit mode, select the previous changed file of the commit and scroll the unified
+    /// commit view to its diff section. Read-only navigation; inert outside commit mode.
+    PrevFileSection,
     /// Close the viewer and return control to the prior pane (AC-20).
     Close,
 }
@@ -150,7 +156,7 @@ pub enum Intent {
 impl Intent {
     /// Every intent variant — lets the dispatcher and tests enumerate the closed set so
     /// keyboard-completeness (AC-18) and the no-file/git-mutation invariant (AC-N3) stay checkable.
-    pub const ALL: [Intent; 40] = [
+    pub const ALL: [Intent; 42] = [
         Intent::NavUp,
         Intent::NavDown,
         Intent::Expand,
@@ -190,6 +196,8 @@ impl Intent {
         Intent::ToggleAllBranches,
         Intent::ShrinkGraph,
         Intent::GrowGraph,
+        Intent::NextFileSection,
+        Intent::PrevFileSection,
         Intent::Close,
     ];
 }
@@ -245,6 +253,8 @@ mod tests {
                 | Intent::ToggleAllBranches
                 | Intent::ShrinkGraph
                 | Intent::GrowGraph
+                | Intent::NextFileSection
+                | Intent::PrevFileSection
                 | Intent::Close => (false, false),
             };
             assert!(
@@ -318,11 +328,11 @@ mod tests {
     }
 
     #[test]
-    fn all_length_is_40() {
+    fn all_length_is_42() {
         assert_eq!(
             Intent::ALL.len(),
-            40,
-            "Intent::ALL must have exactly 40 variants after adding the source-control intents"
+            42,
+            "Intent::ALL must have exactly 42 variants after adding the source-control intents"
         );
     }
 
@@ -333,6 +343,8 @@ mod tests {
             Intent::ToggleAllBranches,
             Intent::ShrinkGraph,
             Intent::GrowGraph,
+            Intent::NextFileSection,
+            Intent::PrevFileSection,
         ] {
             assert!(
                 Intent::ALL.contains(&intent),

@@ -117,6 +117,18 @@ pub trait GitService: Send + Sync {
         let _ = (all, skip, limit);
         Vec::new()
     }
+    /// The files a commit changed (repo-root-relative → status), for the commit-scoped tree.
+    /// Merge commits diff against the first parent. Defaulted to empty (see [`Self::log_graph`]).
+    fn commit_files(&self, sha: &str) -> BTreeMap<PathBuf, Status> {
+        let _ = sha;
+        BTreeMap::new()
+    }
+    /// The whole-commit patch (header + every file's unified diff) for the unified commit
+    /// view, rendered by the diff delegate. Defaulted to empty (see [`Self::log_graph`]).
+    fn commit_patch(&self, sha: &str) -> String {
+        let _ = sha;
+        String::new()
+    }
 }
 
 /// The rendered content pane for one file: ingested text plus any non-fatal notices
@@ -288,6 +300,10 @@ struct RenderJob {
     /// working-tree / baseline diff) instead of a single-file [`GitService::diff`]. Used by
     /// git-status mode when a directory is selected.
     directory_diff: bool,
+    /// When `Some`, the worker fetches the WHOLE-COMMIT patch for this commit id
+    /// ([`GitService::commit_patch`]) as the diff text — the unified commit view. Takes
+    /// precedence over the single-file / directory diff queries.
+    commit_sha: Option<String>,
     /// The content pane's drawable text width (columns) at dispatch, or `None` when unknown
     /// (e.g. the very first render before the first draw measured the pane). Only the markdown
     /// delegate uses it: glow lays out and wraps tables to this width so they fit the pane
@@ -474,6 +490,9 @@ pub struct Controller {
     /// The git graph (source-control) section's state, or `None` while hidden (the `g` toggle).
     /// Root-bound (its rows belong to this repo): reset on a re-root, like the tree.
     graph: Option<graph::GraphState>,
+    /// Commit mode: a commit selected from the graph — the tree is scoped to its files and the
+    /// content pane shows the unified commit view. `None` outside the mode. Root-bound.
+    commit: Option<graph::CommitState>,
     /// The graph section's share of the sidebar height, in percent (the `{`/`}` resize keys).
     /// A session preference like `split_pct`; carried across a re-root.
     graph_pct: u16,
@@ -760,6 +779,7 @@ impl Controller {
             status_mode: false,
             git_status: BTreeMap::new(),
             graph: None,
+            commit: None,
             graph_pct: crate::presenter::GRAPH_PCT_DEFAULT,
             focus: Focus::Tree,
             width: 0,
@@ -852,7 +872,11 @@ impl Controller {
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let raw_diff =
                         if matches!(job.mode, ViewMode::Diff | ViewMode::FullDiff) && job.is_git {
-                            if job.directory_diff {
+                            if let Some(sha) = &job.commit_sha {
+                                // Commit mode: the whole-commit patch (header + every file's
+                                // diff), fetched off the input thread like every diff read.
+                                Some(git.commit_patch(sha))
+                            } else if job.directory_diff {
                                 // Status mode on a directory: pathspec-scoped working-tree/baseline
                                 // diff (rel is empty for the tree root).
                                 let rel = job.rel.as_deref().unwrap_or_else(|| Path::new(""));
@@ -971,9 +995,10 @@ impl Controller {
 
         // Reset navigation/view state (AC-13). The picker is closed on a switch (AC-13 "picker
         // is closed"); `herdr`/`our_workspace_id` are session-level and deliberately left intact.
-        // The graph rows belong to the OLD repo's history — reset the section (`graph_pct`, a
-        // layout preference, is carried like `split_pct`).
+        // The graph rows and any commit mode belong to the OLD repo's history — reset both
+        // (`graph_pct`, a layout preference, is carried like `split_pct`).
         self.graph = None;
+        self.commit = None;
         self.focus = Focus::Tree;
         self.zoomed = false;
         // Re-rooting returns to the two-column split, so release the viewer's own host pane zoom
@@ -1371,12 +1396,13 @@ impl Controller {
         // already get that gap from bat's line-number gutter, so they stay flush (no double gap).
         // Keyed off the DISPLAYED content's file (`content_path`, the title's source of truth), so
         // the gap switches in lockstep with the body — never off a still-loading selection.
-        let content_pad_left = self.content_path.as_ref().is_some_and(|p| {
-            matches!(
-                self.effective_mode(p),
-                ViewMode::RenderedMarkdown | ViewMode::Diff | ViewMode::FullDiff
-            )
-        });
+        let content_pad_left = self.commit.is_some()
+            || self.content_path.as_ref().is_some_and(|p| {
+                matches!(
+                    self.effective_mode(p),
+                    ViewMode::RenderedMarkdown | ViewMode::Diff | ViewMode::FullDiff
+                )
+            });
         // Gutter width for a character selection's highlight (0 when not applicable); computed once
         // here so the line-select snapshot below stays a pure read.
         let sel_gutter = self.selection_gutter_len();
@@ -1427,11 +1453,19 @@ impl Controller {
             // node's name (a directory) or "Content". `content_rendering` tells the Presenter a
             // render is in flight so the `None` fallback doesn't pick up the new (still-loading)
             // selection's name and re-introduce the title-ahead-of-body bug.
-            content_title: self
-                .content_path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .map(|s| s.to_string_lossy().into_owned()),
+            content_title: if let Some(commit) = &self.commit {
+                // Commit mode: the pane shows the unified commit view, so the title is the
+                // commit, not whichever file the commit-scoped tree cursor is on.
+                Some(format!(
+                    "Commit {}",
+                    commit.sha.chars().take(7).collect::<String>()
+                ))
+            } else {
+                self.content_path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .map(|s| s.to_string_lossy().into_owned())
+            },
             content_rendering: self.content_rendering,
             // Populate the highlight overlay from the committed/live search state so the Presenter
             // overlays matches via highlight::apply. `None` when no search is active → draw_content
@@ -1558,6 +1592,11 @@ impl Controller {
     /// plain text) wraps; diffs and code stay unwrapped so their columns align. Takes the node so
     /// the draw path needn't re-walk.
     fn wrap_for(&self, node: Option<&Node>) -> bool {
+        // Commit mode shows a diff document regardless of the selected node's own mode, so the
+        // per-mode default is a diff's: unwrapped (columns stay aligned).
+        if self.commit.is_some() {
+            return self.wrap_override.unwrap_or(false);
+        }
         let default = match node {
             Some(n) if n.kind == NodeKind::File => {
                 // Only prose wraps by default; diffs (compact and full-context) and code keep their
@@ -1675,6 +1714,8 @@ impl Controller {
             Intent::ToggleAllBranches => self.toggle_all_branches(),
             Intent::ShrinkGraph => self.shrink_graph(),
             Intent::GrowGraph => self.grow_graph(),
+            Intent::NextFileSection => self.step_file_section(1),
+            Intent::PrevFileSection => self.step_file_section(-1),
             Intent::Close => self.close_or_unzoom(),
         }
     }
@@ -1692,7 +1733,13 @@ impl Controller {
             Focus::Graph => self.graph_move(delta),
             Focus::Tree => {
                 self.tree.move_cursor(delta);
-                self.dispatch_render(); // new selection → re-render (and reset the scroll)
+                if self.commit.is_some() {
+                    // Commit mode: the tree walks the commit's files; selecting one scrolls
+                    // the unified commit view to its section rather than re-rendering.
+                    self.scroll_to_selected_commit_file();
+                } else {
+                    self.dispatch_render(); // new selection → re-render (and reset the scroll)
+                }
                 Effects::redraw()
             }
         }
@@ -1869,14 +1916,20 @@ impl Controller {
     /// ([`Intent::OpenInEditor`]). The content was already rendered when the file was selected,
     /// so this only flips the layout/focus — no re-render is dispatched.
     fn activate(&mut self) -> Effects {
-        // Focus-gated: `Enter` while the graph is focused is inert here — opening a commit
-        // arrives with the unified commit view (a later change). Browsing stays on the graph.
+        // Focus-gated: `Enter` on a graph row opens that commit (the unified commit view +
+        // the commit-scoped tree). Focus stays on the graph so j/k + Enter browses commits.
         if self.focus == Focus::Graph {
-            return Effects::noop();
+            return self.open_selected_commit();
         }
         let Some(node) = self.tree.selected() else {
             return Effects::noop();
         };
+        // Commit mode: `Enter` on a file scrolls the unified view to its diff section (the
+        // whole-commit document stays the content — no per-file zoom detour).
+        if self.commit.is_some() && node.kind == NodeKind::File {
+            self.scroll_to_selected_commit_file();
+            return Effects::redraw();
+        }
         match node.kind {
             NodeKind::Dir => {
                 if node.expanded {
@@ -2230,6 +2283,13 @@ impl Controller {
             self.search = None;
             return Effects::redraw();
         }
+        // Commit mode is its own dismissal layer: Esc/q leave the commit (restoring the
+        // working-tree view) before they unzoom or quit — a history detour never quits the
+        // viewer by surprise.
+        if self.commit.is_some() {
+            self.leave_commit_mode();
+            return Effects::redraw();
+        }
         if self.zoomed {
             self.zoomed = false;
             self.focus = Focus::Tree;
@@ -2575,6 +2635,7 @@ impl Controller {
             baseline: self.baseline,
             is_git: self.is_git_repo,
             directory_diff: false,
+            commit_sha: None,
             wrap_width: self.md_wrap_width(),
         });
     }
@@ -2610,6 +2671,13 @@ impl Controller {
         // something against the body it was dragged over, so a stale highlight (and copy) must not
         // carry onto new content. Scrolling keeps it — it doesn't dispatch, and the coords stay valid.
         self.content_selection = None;
+
+        // Commit mode owns the content pane: every re-render path (toggles, refresh, the mode's
+        // own entry) shows the unified commit view, not the tree selection's file. Leaving the
+        // mode goes back through this same function with `commit` cleared.
+        if let Some(sha) = self.commit.as_ref().map(|c| c.sha.clone()) {
+            return self.dispatch_commit_render(sha);
+        }
 
         let Some(node) = self.tree.selected() else {
             // No visible node: an empty tree or a filter (changed-only, gitignore, etc.)
@@ -2656,6 +2724,7 @@ impl Controller {
                 baseline,
                 is_git: self.is_git_repo,
                 directory_diff,
+                commit_sha: None,
                 wrap_width: self.md_wrap_width(),
             })
             .is_ok()

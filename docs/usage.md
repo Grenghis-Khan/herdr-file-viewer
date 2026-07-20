@@ -96,11 +96,19 @@ Cursor/VS Code spirit, as a strictly read-only *viewer*:
   branch edges are drawn by git itself, in color), newest first. `j`/`k` move the selection,
   and more history loads automatically as you near the bottom. `B` widens the walk to **all
   branches**; `{` / `}` resize the section; `Tab` cycles focus tree → graph → content.
-- `y` / `Y` with the graph focused copy the selected commit's short / full id (the same
-  clipboard path as the tree's path copy). `g` closes the section entirely.
+- **`Enter` on a commit opens it** the way GitHub's commit page does: the content pane becomes
+  the **unified commit view** — the commit's header (author, date, message) followed by every
+  changed file's diff, one scrollable document rendered by delta — and the file tree switches
+  to **just that commit's changed files** with `A`/`M`/`D` markers. Selecting a file there (or
+  jumping with `]` / `[`) scrolls the unified view to that file's diff section.
+- `y` / `Y` with the graph focused copy the selected commit's short / full id. `Esc` leaves
+  commit mode, restoring the working-tree tree and your previous selection; `g` closes the
+  section entirely.
 
 Like everything else in the viewer this is **read-only**: browsing history never checks out,
-stages, or mutates anything.
+stages, or mutates anything. Merge commits are diffed against their first parent, and the diff
+rendering (and its delta/plain-text fallback) is exactly the same pipeline as the working-tree
+diff view.
 
 ## Navigating within a file
 

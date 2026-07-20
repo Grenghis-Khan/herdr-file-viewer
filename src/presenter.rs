@@ -176,6 +176,9 @@ pub struct GraphView {
     /// The section's top-border title (e.g. `History` / `History · all`). First-party static
     /// text assembled by the controller.
     pub title: String,
+    /// The short id of the commit the unified commit view is showing, when commit mode is
+    /// active — drawn on the bottom border so the mode is visible at a glance.
+    pub commit_short: Option<String>,
 }
 
 /// The worktree picker's draw model (an owned snapshot of the controller's picker state, so
@@ -1021,9 +1024,12 @@ pub const GRAPH_PCT_MAX: u16 = 80;
 /// escape-neutralizing ingest (AC-27); the selection emphasis is style-only (REVERSED), so the
 /// graph's own ANSI colors survive underneath it.
 fn draw_graph(frame: &mut Frame, area: Rect, state: &ViewState, graph: &GraphView) {
-    let block = Block::bordered()
+    let mut block = Block::bordered()
         .title(truncate_title(&sanitize_control(&graph.title), area.width))
         .border_style(border_style(state.focus == Focus::Graph));
+    if let Some(short) = &graph.commit_short {
+        block = block.title_bottom(truncate_title(&sanitize_control(short), area.width));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if inner.height == 0 || inner.width == 0 {

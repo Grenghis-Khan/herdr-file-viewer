@@ -50,6 +50,12 @@ impl Controller {
         if self.status_mode {
             self.tree.set_changed_only(true, &self.git_status);
         }
+        // Commit mode outranks both: the tree stays scoped to the COMMIT's (immutable) file
+        // set across any refresh — a focus-gain or `r` must not swap the commit's files for
+        // the working tree's while the unified commit view is showing.
+        if let Some(commit) = &self.commit {
+            self.tree.set_changed_only(true, commit.files());
+        }
     }
 
     /// Re-query git for the working-tree status (tree markers, AC-7) and the changed-set

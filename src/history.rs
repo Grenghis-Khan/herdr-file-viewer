@@ -8,8 +8,9 @@
 //! any git failure degrades to an empty result so the graph section just shows nothing
 //! (AC-26).
 
-use crate::git::git_command;
-use std::path::Path;
+use crate::git::{Status, git_command, parse_name_status};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 /// The unit separator wrapping the embedded SHA in the `git log` format string. Chosen because
 /// it cannot appear in a commit subject rendered by `%s` (git strips control bytes from
@@ -30,9 +31,9 @@ pub struct CommitRow {
     pub line: String,
 }
 
-/// A commit id we are willing to pass back to git: pure hex, bounded length. Every sha the
-/// viewer forwards to git came out of [`log_graph`]'s own parse, but re-validating at the
-/// boundary means an untrusted or corrupted value can never become an argv item
+/// A commit id we are willing to pass back to git: pure hex, bounded length. Everything the
+/// viewer passes to [`commit_files`]/[`commit_patch`] came out of [`log_graph`]'s own parse,
+/// but re-validating here means an untrusted or corrupted value can never become an argv item
 /// (defense-in-depth, mirroring `git::is_safe_ref`).
 pub fn is_valid_sha(s: &str) -> bool {
     (4..=64).contains(&s.len()) && s.chars().all(|c| c.is_ascii_hexdigit())
@@ -96,6 +97,63 @@ fn parse_graph_line(line: &str) -> CommitRow {
     }
 }
 
+/// The files a commit changed, keyed by repo-root-relative path with the same A/M/D statuses
+/// the working-tree changed-set uses (renames/copies map to Modified, like every other
+/// `--name-status` consumer here). Merge commits diff against the **first parent** (the GitHub
+/// commit-page convention). Invalid sha / git failure → empty (AC-26).
+pub fn commit_files(repo_root: &Path, sha: &str) -> BTreeMap<PathBuf, Status> {
+    if !is_valid_sha(sha) {
+        return BTreeMap::new();
+    }
+    // `show --first-parent` limits a merge to its first-parent diff; `--format=` suppresses the
+    // header so the output is pure NUL-delimited name-status records. `--end-of-options` keeps
+    // defense-in-depth parity with every other ref-taking query.
+    let out = git_command(
+        repo_root,
+        &[
+            "show",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--first-parent",
+            "--name-status",
+            "--find-renames",
+            "--format=",
+            "-z",
+            "--end-of-options",
+            sha,
+        ],
+    )
+    .output()
+    .ok()
+    .filter(|o| o.status.success())
+    .map(|o| o.stdout)
+    .unwrap_or_default();
+    parse_name_status(&out)
+}
+
+/// The whole-commit patch for the unified commit view: the commit header (hash, author, date,
+/// subject + body) followed by every file's unified diff — one scrollable document, rendered
+/// by the diff delegate (delta). Merge commits diff against the first parent. Bounded by the
+/// same capture cap as every other diff read. Invalid sha / git failure → empty (AC-26).
+pub fn commit_patch(repo_root: &Path, sha: &str) -> String {
+    if !is_valid_sha(sha) {
+        return String::new();
+    }
+    let cmd = git_command(
+        repo_root,
+        &[
+            "show",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--first-parent",
+            "--end-of-options",
+            sha,
+        ],
+    );
+    crate::git::capture_stdout(cmd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +197,13 @@ mod tests {
         assert!(!is_valid_sha("HEAD")); // not hex
         assert!(!is_valid_sha("abc")); // too short
         assert!(!is_valid_sha("")); // empty
+    }
+
+    #[test]
+    fn invalid_sha_never_reaches_git() {
+        // The guard runs before any spawn: an option-shaped "sha" yields empty results.
+        let root = Path::new("/no/such/repo");
+        assert!(commit_files(root, "--exec=evil").is_empty());
+        assert_eq!(commit_patch(root, "--exec=evil"), "");
     }
 }

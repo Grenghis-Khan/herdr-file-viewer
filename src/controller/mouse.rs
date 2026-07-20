@@ -259,11 +259,16 @@ impl Controller {
                 Effects::redraw()
             }
             MouseRegion::GraphRow(idx) => {
-                // Select the graph row it landed on. Rows past the loaded end clamp to the last.
+                // Select the graph row it landed on; a double-click opens the commit (like
+                // Enter). Rows past the loaded end just clamp to the last row.
+                let double = is_double_click(self.last_click, (col, row), now);
                 self.last_click = Some((col, row, now));
                 self.action_notice = None;
                 self.focus = Focus::Graph;
                 self.graph_set_cursor(idx);
+                if double {
+                    return self.open_selected_commit();
+                }
                 Effects::redraw()
             }
             MouseRegion::Content => {
@@ -295,7 +300,11 @@ impl Controller {
             MouseRegion::TreeRow(_) => {
                 self.focus = Focus::Tree;
                 self.tree.move_cursor(delta.signum());
-                self.dispatch_render();
+                if self.commit.is_some() {
+                    self.scroll_to_selected_commit_file();
+                } else {
+                    self.dispatch_render();
+                }
                 Effects::redraw()
             }
             MouseRegion::GraphRow(_) => {

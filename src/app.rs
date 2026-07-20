@@ -409,6 +409,12 @@ impl GitService for LiveGit {
     fn log_graph(&self, all: bool, skip: usize, limit: usize) -> Vec<crate::history::CommitRow> {
         crate::history::log_graph(&self.repo_root, all, skip, limit)
     }
+    fn commit_files(&self, sha: &str) -> BTreeMap<PathBuf, Status> {
+        crate::history::commit_files(&self.repo_root, sha)
+    }
+    fn commit_patch(&self, sha: &str) -> String {
+        crate::history::commit_patch(&self.repo_root, sha)
+    }
 }
 
 /// The live Content Renderer: classify + delegate to the external renderers, with guards.
